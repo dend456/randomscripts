@@ -1,5 +1,5 @@
 #! /usr/bin/env python3.4
-import time, random, ctypes, win32gui
+import time, random, ctypes, win32gui, win32con, win32api
 from PIL import Image, ImageGrab
 
 x_positions = [186, 237, 289, 341, 392, 444, 496, 547, 599, 651, 703, 754, 806, 858, 909, 962, 1014, 1065, 1117, 1169, 1220, 1272, 1324, 1376,
@@ -7,8 +7,7 @@ x_positions = [186, 237, 289, 341, 392, 444, 496, 547, 599, 651, 703, 754, 806, 
 y_positions = [129, 180, 232, 284, 335, 387, 439, 491, 542, 595, 647, 698, 750, 802, 853, 905]
 colors = [((23, 43), (60, 78, 194)), ((23, 40), (24, 103, 12)), ((21, 26), (173, 16, 12)), ((30, 33), (0, 1, 121)), ((24, 24), (126, 0, 2)),
           ((38, 36), (2, 123, 133)), ((16, 14), (158, 34, 26)),  ((16, 35), (168, 14, 8))]
-done_color = (240, 240, 240, 255)
-done_positions = [(1090, 550), (800, 575), (780, 450)]
+
 original_color_offset = 10
 board_size = (30, 16)
 place_flags = False
@@ -97,12 +96,7 @@ def fill_bombs(board):
 
 def get_board(board, original_colors):
     img = ImageGrab.grab().convert('RGBA')
-    done = True
-    for p in done_positions:
-        if img.getpixel(p) != done_color:
-            done = False
-    if done:
-        return False
+
     for y in range(board_size[1]):
         for x in range(board_size[0]):
             if board[y][x] != ' ':
@@ -164,34 +158,42 @@ def main():
             row_colors.append(original.getpixel((x_positions[x] + original_color_offset, y_positions[y] + original_color_offset)))
         original_colors.append(row_colors)
 
-    board = [[' '] * board_size[0] for _ in range(board_size[1])]
-    while True:
+    running = True
+
+    while running:
+        board = [[' '] * board_size[0] for _ in range(board_size[1])]
         x = random.randint(0, board_size[0] - 1)
         y = random.randint(0, board_size[1] - 1)
         click(x, y)
         time.sleep(.3)
         board = get_board(board, original_colors)
+        won = False
+
         while True:
-            move = get_move(board)
-            if not move:
+            if win32api.GetAsyncKeyState(win32con.VK_ESCAPE):
+                running = False
                 break
+            elif win32gui.FindWindow(None, 'Game Won'):
+                won = True
+                break
+            elif win32gui.FindWindow(None, 'Game Lost'):
+                break
+
+            move = get_move(board)
             click(move[0], move[1])
             time.sleep(.05)
             board = get_board(board, original_colors)
-            if not board:
-                break
+
             #print_board(board)
             #print('---')
 
-        time.sleep(1)
-        for b in play_button_coords:
-            click_abs(b[0], b[1])
-            time.sleep(1)
-            board = [[' '] * board_size[0] for _ in range(board_size[1])]
-            board = get_board(board, original_colors)
-            if board:
-                break
-        time.sleep(5)
+        if running:
+            time.sleep(.2)
+            if won:
+                click_abs(play_button_coords[1][0], play_button_coords[1][1])
+            else:
+                click_abs(play_button_coords[0][0], play_button_coords[0][1])
+            time.sleep(1.5)
 
 if __name__ == '__main__':
     main()
