@@ -1,6 +1,6 @@
-import ctypes as ct
+﻿import ctypes as ct
 from ctypes import wintypes as wt
-import os,win32process,win32api,win32ui,time,struct,sys
+import os,win32process,win32api,win32ui,time,struct,sys,win32gui
 
 
 class MemoryReader:
@@ -14,13 +14,19 @@ class MemoryReader:
     PROCESS_QUERY_INFORMATION = 0x0400
     PROCESS_TERMINATE = 0x0001
 
-    def __init__(self, windowName, moduleName = None):
+    def __init__(self, windowName, moduleName = None, hwnd = None):
         self.windowName = windowName
         self.moduleName = moduleName if moduleName else windowName + '.exe'
-        self.hwnd = win32ui.FindWindow(None,self.windowName).GetSafeHwnd()
+        self.hwnd = hwnd
+        if not hwnd:
+            self.hwnd = win32ui.FindWindow(None,self.windowName).GetSafeHwnd()
         self.processId = win32process.GetWindowThreadProcessId(self.hwnd)[1]
         self.handle = self.__getHandle()
         self.baseAddress = self.__getBaseAddress()
+
+    @classmethod
+    def from_window(cls, hwnd, moduleName = None):
+        return cls(win32gui.GetWindowText(hwnd), moduleName=moduleName, hwnd=hwnd)
 
     def __getHandle(self):
         handle = ct.windll.kernel32.OpenProcess(ct.c_uint(MemoryReader.PROCESS_QUERY_INFORMATION | MemoryReader.PROCESS_VM_READ | MemoryReader.PROCESS_VM_WRITE | MemoryReader.PROCESS_VM_OPERATION), ct.c_int(1), ct.c_uint(self.processId))
