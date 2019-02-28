@@ -110,7 +110,7 @@ class MemoryReader:
 
     def write(self, address, buffer):
         old_protect = ct.c_uint()
-        to_write = ct.create_string_buffer(buffer)
+        to_write = ct.create_string_buffer(buffer, len(buffer))
         address = ct.c_void_p(address)
         bytes_written = ct.c_int()
         ct.windll.kernel32.VirtualProtectEx(self.handle, address, ct.sizeof(to_write),
