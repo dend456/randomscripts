@@ -1,6 +1,11 @@
-﻿import ctypes as ct
-from ctypes import wintypes as wt
-import os,win32process,win32api,win32ui,time,struct,sys,win32gui
+﻿from ctypes import wintypes as wt
+import ctypes as ct
+import win32process
+import win32ui
+import time
+import struct
+import sys
+import win32gui
 
 
 class MemoryReader:
@@ -14,32 +19,35 @@ class MemoryReader:
     PROCESS_QUERY_INFORMATION = 0x0400
     PROCESS_TERMINATE = 0x0001
 
-    def __init__(self, windowName, moduleName = None, hwnd = None):
-        self.windowName = windowName
-        self.moduleName = moduleName if moduleName else windowName + '.exe'
+    def __init__(self, window_name, module_name=None, hwnd=None):
+        self.window_name = window_name
+        self.module_name = module_name if module_name else window_name + '.exe'
         self.hwnd = hwnd
         if not hwnd:
-            self.hwnd = win32ui.FindWindow(None,self.windowName).GetSafeHwnd()
-        self.processId = win32process.GetWindowThreadProcessId(self.hwnd)[1]
-        self.handle = self.__getHandle()
-        self.baseAddress = self.__getBaseAddress()
+            self.hwnd = win32ui.FindWindow(None, self.window_name).GetSafeHwnd()
+        self.pid = win32process.GetWindowThreadProcessId(self.hwnd)[1]
+        self.handle = self._get_handle()
+        self.base_address = self._get_base_address()
 
     @classmethod
-    def from_window(cls, hwnd, moduleName = None):
-        return cls(win32gui.GetWindowText(hwnd), moduleName=moduleName, hwnd=hwnd)
+    def from_window(cls, hwnd, module_name=None):
+        return cls(win32gui.GetWindowText(hwnd), module_name=module_name, hwnd=hwnd)
 
-    def __getHandle(self):
-        handle = ct.windll.kernel32.OpenProcess(ct.c_uint(MemoryReader.PROCESS_QUERY_INFORMATION | MemoryReader.PROCESS_VM_READ | MemoryReader.PROCESS_VM_WRITE | MemoryReader.PROCESS_VM_OPERATION), ct.c_int(1), ct.c_uint(self.processId))
+    def _get_handle(self):
+        handle = ct.windll.kernel32.OpenProcess(ct.c_uint(MemoryReader.PROCESS_QUERY_INFORMATION |
+                                                          MemoryReader.PROCESS_VM_READ | MemoryReader.PROCESS_VM_WRITE |
+                                                          MemoryReader.PROCESS_VM_OPERATION),
+                                                ct.c_int(1), ct.c_uint(self.pid))
         if handle == ct.c_void_p(0):
             raise RuntimeError('Unable to get process handle.')
         return handle
 
-    def __getBaseAddress(self):
+    def _get_base_address(self):
         class ModuleInfo(ct.Structure):
-            _fields_ = [('baseOfDll', wt.LPVOID),('sizeOfImage', wt.DWORD),('entryPoint', wt.LPVOID)]
-        bufferSize = 256
-        imageName = ct.create_string_buffer(bufferSize)
-        length = ct.windll.psapi.GetProcessImageFileNameA(self.handle, imageName, wt.DWORD(bufferSize))
+            _fields_ = [('baseOfDll', wt.LPVOID), ('sizeOfImage', wt.DWORD), ('entryPoint', wt.LPVOID)]
+        buffer_size = 256
+        image_name = ct.create_string_buffer(buffer_size)
+        length = ct.windll.psapi.GetProcessImageFileNameA(self.handle, image_name, wt.DWORD(buffer_size))
         if length <= 0:
             raise RuntimeError('Unable to get image file name.')
         modules = (ct.c_ulong * 1024)()
@@ -47,17 +55,17 @@ class MemoryReader:
         if ct.windll.psapi.EnumProcessModules(self.handle, modules, ct.sizeof(modules), ct.byref(count)) == 0:
             raise RuntimeError('Unable to enumerate modules.')
 
-        moduleHandle = 0
-        moduleNameInBytes = bytes(self.moduleName,'utf-8')
-        for i in range(0,count.value // ct.sizeof(wt.HMODULE)):
-            moduleName = ct.create_string_buffer(bufferSize)
-            if ct.windll.psapi.GetModuleBaseNameA(self.handle, modules[0], moduleName, ct.sizeof(moduleName)) == 0:
+        module_handle = 0
+        module_name_in_bytes = bytes(self.module_name, 'utf-8')
+        for i in range(0, count.value // ct.sizeof(wt.HMODULE)):
+            module_name = ct.create_string_buffer(buffer_size)
+            if ct.windll.psapi.GetModuleBaseNameA(self.handle, modules[0], module_name, ct.sizeof(module_name)) == 0:
                 raise RuntimeError('Unable to get module name.')
-            if moduleName.value == moduleNameInBytes:
-                moduleHandle = modules[i]
+            if module_name.value == module_name_in_bytes:
+                module_handle = modules[i]
                 break
 
-        if moduleHandle == 0:
+        if module_handle == 0:
             raise RuntimeError('Unable to get module handle.')
 
         info = ModuleInfo()
@@ -69,65 +77,73 @@ class MemoryReader:
     def __del__(self):
         ct.windll.kernel32.CloseHandle(self.handle)
 
-    def read(self, address, bytesToRead):
-        bytesRead = ct.c_size_t(0)
+    def read(self, address, bytes_to_read):
+        bytes_read = ct.c_size_t(0)
         address = ct.c_void_p(address)
-        btr = ct.c_size_t(bytesToRead)
-        buffer = ct.create_string_buffer(bytesToRead)
-        ct.windll.kernel32.ReadProcessMemory(self.handle, address, ct.byref(buffer), btr, ct.byref(bytesRead))
+        btr = ct.c_size_t(bytes_to_read)
+        buffer = ct.create_string_buffer(bytes_to_read)
+        ct.windll.kernel32.ReadProcessMemory(self.handle, address, ct.byref(buffer), btr, ct.byref(bytes_read))
         return bytearray(buffer)
 
-    def readInt(self, address):
-        bs = self.read(address,4)
-        return int.from_bytes(bs,signed=True,byteorder=sys.byteorder)
+    def read_int(self, address):
+        bs = self.read(address, 4)
+        return int.from_bytes(bs, signed=True, byteorder=sys.byteorder)
 
-    def readUInt(self, address):
-        bs = self.read(address,4)
-        return int.from_bytes(bs,signed=False,byteorder=sys.byteorder)
+    def read_uint(self, address):
+        bs = self.read(address, 4)
+        return int.from_bytes(bs, signed=False, byteorder=sys.byteorder)
 
-    def readMultiLevelPointer(self, address, offsets):
+    def read_multi_level_pointer(self, address, offsets):
         if address == 0:
             address = self.baseAddress
         val = address
         for offset in offsets:
-            val = self.readInt(val + offset)
+            val = self.read_int(val + offset)
         return val
 
-    def readByte(self, address):
+    def read_byte(self, address):
         return self.read(address, 1)
 
-    def readFloat(self, address):
-        bs = self.read(address,4)
+    def read_float(self, address):
+        bs = self.read(address, 4)
         return struct.unpack('f', bs)[0]
 
     def write(self, address, buffer):
-        oldProtect = ct.c_uint()
-        toWrite = ct.create_string_buffer(buffer)
+        old_protect = ct.c_uint()
+        to_write = ct.create_string_buffer(buffer)
         address = ct.c_void_p(address)
-        bytesWritten = ct.c_int()
-        ct.windll.kernel32.VirtualProtectEx(self.handle, address, ct.sizeof(toWrite), MemoryReader.PAGE_READWRITE, ct.byref(oldProtect))
-        ct.windll.kernel32.WriteProcessMemory(self.handle, address, toWrite, ct.sizeof(toWrite), ct.byref(bytesWritten))
-        return bytesWritten.value
+        bytes_written = ct.c_int()
+        ct.windll.kernel32.VirtualProtectEx(self.handle, address, ct.sizeof(to_write),
+                                            MemoryReader.PAGE_READWRITE, ct.byref(old_protect))
+        ct.windll.kernel32.WriteProcessMemory(self.handle, address, to_write, ct.sizeof(to_write),
+                                              ct.byref(bytes_written))
+        ct.windll.kernel32.VirtualProtectEx(self.handle, address, ct.sizeof(to_write),
+                                            old_protect, ct.byref(old_protect))
+        return bytes_written.value
 
-    def writeByte(self, address, byte):
-        return self.write(address, bytes([bytes]))
+    def write_byte(self, address, byte):
+        return self.write(address, bytes([byte]))
 
-    def writeInt(self, address, i):
-        return self.write(address, struct.pack('i',i))
+    def write_int(self, address, i):
+        return self.write(address, struct.pack('i', i))
 
-    def writeUInt(self, address, i):
-        return self.write(address, struct.pack('I',i))
+    def write_uint(self, address, i):
+        return self.write(address, struct.pack('I', i))
 
-    def writeFloat(self, address, f):
-        return self.write(address, struct.pack('f',f))
-    
+    def write_float(self, address, f):
+        return self.write(address, struct.pack('f', f))
 
-if __name__ == '__main__':
+
+def main():
     mr = MemoryReader('Hearthstone')
 
     offsets = [0x00A1E264, 0x310, 0x6D0, 0x568, 0x6E4, 0xC8]
 
     while True:
-        screen = mr.readMultiLevelPointer(0, offsets)
+        screen = mr.read_multi_level_pointer(0, offsets)
         print(screen)
         time.sleep(1)
+
+
+if __name__ == '__main__':
+    main()
