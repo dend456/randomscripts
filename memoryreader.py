@@ -2,7 +2,7 @@
 import ctypes as ct
 import win32process
 import win32ui
-import time
+import win32api
 import struct
 import sys
 import win32gui
@@ -53,7 +53,7 @@ class MemoryReader:
         modules = (ct.c_ulong * 1024)()
         count = ct.c_ulong()
         if ct.windll.psapi.EnumProcessModules(self.handle, modules, ct.sizeof(modules), ct.byref(count)) == 0:
-            raise RuntimeError('Unable to enumerate modules.')
+            raise RuntimeError(f'Unable to enumerate modules. Error: {win32api.GetLastError()}')
 
         module_handle = 0
         module_name_in_bytes = bytes(self.module_name, 'utf-8')
@@ -133,16 +133,39 @@ class MemoryReader:
     def write_float(self, address, f):
         return self.write(address, struct.pack('f', f))
 
+    @staticmethod
+    def memory_to_string(buff):
+        out = ''
+
+        for r in range(0, len(buff) // 16):
+            out += f'0x{r*16:04x}) '
+            for c in range(16):
+                index = r*16 + c
+                out += f'{buff[index]:02x}'
+
+                out += ' '
+                if c % 4 == 3:
+                    out += ' '
+
+            out += '    '
+
+            for c in range(16):
+                index = r * 16 + c
+                if chr(buff[index]).isalnum():
+                    out += chr(buff[index])
+                else:
+                    out += '.'
+
+            out += '\n'
+        return out
+
 
 def main():
-    mr = MemoryReader('Hearthstone')
+    mr = MemoryReader('EverQuest', 'eqgame.exe')
+    addr = mr.read_uint(mr.base_address + 0xec7e58 - 0x400000)
+    buff = mr.read(addr, 2000)
 
-    offsets = [0x00A1E264, 0x310, 0x6D0, 0x568, 0x6E4, 0xC8]
-
-    while True:
-        screen = mr.read_multi_level_pointer(0, offsets)
-        print(screen)
-        time.sleep(1)
+    print(mr.memory_to_string(buff))
 
 
 if __name__ == '__main__':
