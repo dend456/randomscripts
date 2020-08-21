@@ -27,7 +27,7 @@ class MemoryReader:
             self.hwnd = win32ui.FindWindow(None, self.window_name).GetSafeHwnd()
         self.pid = win32process.GetWindowThreadProcessId(self.hwnd)[1]
         self.handle = self._get_handle()
-        self.base_address = self._get_base_address()
+        self.base_address, self.image_size = self._get_base_address()
 
     @classmethod
     def from_window(cls, hwnd, module_name=None):
@@ -72,7 +72,7 @@ class MemoryReader:
         if ct.windll.psapi.GetModuleInformation(self.handle, modules[0], ct.byref(info), ct.sizeof(info)) == 0:
             raise RuntimeError('Unable to get module info.')
 
-        return info.baseOfDll
+        return info.baseOfDll, info.sizeOfImage
 
     def __del__(self):
         ct.windll.kernel32.CloseHandle(self.handle)
@@ -159,14 +159,35 @@ class MemoryReader:
             out += '\n'
         return out
 
+    def find_ptr(self, pointer, start_addr=None, end_addr=None, buffer_size=1000000, max_offset=0x1000):
+        if not start_addr:
+            start_addr = self.base_address
+
+        if not end_addr:
+            end_addr = self.base_address + self.image_size
+
+        buffer_offset = buffer_size % 4
+        possibles = []
+        for addr in range(start_addr, end_addr, buffer_size - buffer_offset):
+            buff = self.read(addr, buffer_size)
+            for i in range(0, buffer_size, 4):
+                ptr_addr = struct.unpack('I', buff[i:i+4])[0]
+                if ptr_addr < pointer < ptr_addr + max_offset:
+                    image_addr = addr + i - self.base_address
+                    possibles.append((image_addr, pointer - ptr_addr))
+
+        return possibles
 
 def main():
     mr = MemoryReader('EverQuest', 'eqgame.exe')
-    addr = mr.read_uint(mr.base_address + 0xec7e58 - 0x400000)
-    buff = mr.read(addr, 2000)
 
-    print(mr.memory_to_string(buff))
+    # addr = mr.read_uint(mr.base_address + 0x9e573c)
+    # buff = mr.read(addr, 2000)
+    # print(mr.memory_to_string(buff))
 
+    res = mr.find_ptr(0x2ECC466C)
+    for addr in res:
+        print(f'0x{addr[0]:x} + 0x{addr[1]:x}')
 
 if __name__ == '__main__':
     main()
