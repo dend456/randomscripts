@@ -6,6 +6,7 @@ import win32api
 import struct
 import sys
 import win32gui
+import re
 
 
 class MemoryReader:
@@ -134,11 +135,11 @@ class MemoryReader:
         return self.write(address, struct.pack('f', f))
 
     @staticmethod
-    def memory_to_string(buff):
+    def memory_to_string(buff, base_offset=0):
         out = ''
 
         for r in range(0, len(buff) // 16):
-            out += f'0x{r*16:04x}) '
+            out += f'0x{r*16+base_offset:04x}) '
             for c in range(16):
                 index = r*16 + c
                 out += f'{buff[index]:02x}'
@@ -178,16 +179,80 @@ class MemoryReader:
 
         return possibles
 
+    def find_group(self, group_str, start_addr=None, end_addr=None, buffer_size=1000000):
+        size_types = {1: 'c', 2: 'h', 4: 'i', 8: 'q'}
+        if not start_addr:
+            start_addr = self.base_address
+
+        if not end_addr:
+            end_addr = self.base_address + self.image_size
+
+        group = group_str.split(' ')
+        group = [x.split(':') for x in group]
+        group = [(int(size), s) for size, s in group]
+        search_str = b''
+        for size, s in group:
+            if s == '*':
+                search_str += b'.' * size
+            else:
+                i = int(s)
+                s = struct.pack(size_types[size], i)
+                search_str += s
+
+        regex_str = re.compile(search_str, re.DOTALL)
+
+        buffer_offset = buffer_size % 4
+        possibles = []
+        for addr in range(start_addr, end_addr, buffer_size - buffer_offset):
+            buff = self.read(addr, buffer_size)
+            for match in regex_str.finditer(buff):
+                possibles.append(match.start())
+
+        return possibles
+
 def main():
+    import time
+    import os
+
     mr = MemoryReader('EverQuest', 'eqgame.exe')
 
-    # addr = mr.read_uint(mr.base_address + 0x9e573c)
-    # buff = mr.read(addr, 2000)
-    # print(mr.memory_to_string(buff))
+    # while True:
+    #     os.system('cls')
+    #     addr = mr.read_uint(mr.base_address + 0x9e573c)
+    #     buff = mr.read(addr + 0x400, 0x300)
+    #     print(mr.memory_to_string(buff, 0x400))
+    #     time.sleep(.5)
 
-    res = mr.find_ptr(0x2ECC466C)
-    for addr in res:
-        print(f'0x{addr[0]:x} + 0x{addr[1]:x}')
+    addr = 0xde573c - 0x400000 + mr.base_address
+    addr = mr.read_int(addr)
+    print(f'base: {mr.base_address:x} end: {mr.base_address+mr.image_size:x} addr:{addr:x}')
+    #
+    #
+    # pos = mr.find_group('4:-10 4:-15 100:* 4:15 4:2 4:10 4:10 4:0 8:* 4:198', start_addr=addr, end_addr=addr+0x10000000, buffer_size=1000000)
+    # for p in pos:
+    #     print(f'{p:x}')
+
+    start_addr = mr.base_address
+    end_addr = mr.base_address + mr.image_size
+    memory = mr.read(start_addr, end_addr - start_addr)
+    possible_addrs = []
+    for addr in range(0, end_addr - start_addr, 4):
+        next_addr = int.from_bytes(memory[addr:addr+4], 'little', signed=False)
+        if 0x10000000 < next_addr < 0xffffffff:
+            pos = mr.find_group('4:-10 4:-15 100:* 4:15 4:2 4:10 4:10 4:0 8:* 4:198', start_addr=next_addr, end_addr=next_addr+0x1000, buffer_size=0x1000)
+            if pos:
+                pos = [(addr + 0x400000, x) for x in pos]
+                for x in pos:
+                    print(f'Found possible: {x[0]:x} + {x[1]:x}')
+                possible_addrs.extend(pos)
+
+
+    #print(possible_addrs)
+
+    # print(mr.image_size)
+    # res = mr.find_ptr(0x2ECC466C)
+    # for addr in res:
+    #     print(f'0x{addr[0]:x} + 0x{addr[1]:x}')
 
 if __name__ == '__main__':
     main()
